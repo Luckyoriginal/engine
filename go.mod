@@ -1,4 +1,4 @@
-module github.com/yourname/engine
+module github.com/luckyoriginal/engine
 
 go 1.24.0
 
