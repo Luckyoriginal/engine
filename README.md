@@ -10,8 +10,7 @@ Filters are built automatically. Lifecycle hooks are optional.
 ## Installation
 
 ```
-require github.com/yourname/engine v0.0.0
-replace github.com/yourname/engine => ../engine
+go get github.com/Luckyoriginal/engine
 ```
 
 ---
@@ -27,7 +26,7 @@ import (
 
     "github.com/hajimehoshi/ebiten/v2"
     "github.com/hajimehoshi/ebiten/v2/vector"
-    "github.com/yourname/engine"
+    "github.com/Luckyoriginal/engine"
 )
 
 // 1. Define components as plain structs.
