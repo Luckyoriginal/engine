@@ -26,24 +26,16 @@ type Comp[T any] struct {
 // NewComp allocates an unregistered Comp descriptor.
 func NewComp[T any]() *Comp[T] { return &Comp[T]{} }
 
-// Register wires T into the world. Safe to call more than once.
-//
-// What happens here:
-//  1. ark assigns a stable component ID for T.
-//  2. A copyInto func is stored so Spawn can copy struct fields into ark storage.
-//  3. If *T implements OnAdder, an onAdder callback is stored and called by
-//     Spawn after data is written (so OnAdd always sees real values).
-//  4. If *T implements OnRemover, an ark OnRemoveEntity observer is registered
-//     so Despawn triggers OnRemove automatically.
-func (c *Comp[T]) Register(w World) {
-	if c.valid {
+// RegisterComp registers type T as a component in the world.
+func RegisterComp[T any](w World) {
+	impl := w.(*worldImpl)
+	typ := reflect.TypeOf((*T)(nil)).Elem()
+
+	if _, ok := impl.byType[typ]; ok {
 		return
 	}
-	impl := w.(*worldImpl)
-	c.id = arkecs.ComponentID[T](&impl.ark)
-	c.valid = true
 
-	typ := reflect.TypeOf((*T)(nil)).Elem()
+	id := arkecs.ComponentID[T](&impl.ark)
 
 	copyInto := func(dst unsafe.Pointer, src reflect.Value) {
 		*(*T)(dst) = src.Interface().(T)
@@ -58,10 +50,6 @@ func (c *Comp[T]) Register(w World) {
 	}
 
 	if reflect.PointerTo(typ).Implements(reflect.TypeOf((*OnRemover)(nil)).Elem()) {
-		// OnRemover is wired as an ark observer so it fires on Despawn too,
-		// not just on Spawn-paired removes.
-		// .With(arkecs.C[T]()) filters the observer to entities that carry T.
-		id := c.id
 		arkecs.Observe(arkecs.OnRemoveEntity).
 			With(arkecs.C[T]()).
 			Do(func(entity arkecs.Entity) {
@@ -74,7 +62,21 @@ func (c *Comp[T]) Register(w World) {
 			Register(&impl.ark)
 	}
 
-	impl.registerEntry(c.id, typ, copyInto, onAdder)
+	impl.registerEntry(id, typ, copyInto, onAdder)
+}
+
+// Register wires T into the world. Safe to call more than once.
+func (c *Comp[T]) Register(w World) {
+	if c.valid {
+		return
+	}
+	RegisterComp[T](w)
+	impl := w.(*worldImpl)
+	typ := reflect.TypeOf((*T)(nil)).Elem()
+	if entry, ok := impl.byType[typ]; ok {
+		c.id = entry.id
+		c.valid = true
+	}
 }
 
 // ID returns the ark component ID. Panics if called before Register.

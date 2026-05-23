@@ -258,7 +258,64 @@ func (s *EnemyAI) Init(w engine.World) {
 }
 ```
 
-Filters are built before `Init` is called, so both can be used together.
+---
+
+### Scene Manager (Type-Safe State & Transitions)
+
+For larger games, managing transitions between a Main Menu, Gameplay, and a Game Over screen is critical. The engine includes a type-safe **Scene Manager** backed by [stagehand](https://github.com/joelschutz/stagehand) that allows you to easily switch between scenes, each with its own isolated ECS `World` (so entities and systems are completely unloaded when switching).
+
+Scenes share a type-safe State struct that is passed from scene to scene during transitions.
+
+#### 1. Define your shared game state
+```go
+type GameState struct {
+    Score int
+}
+```
+
+#### 2. Implement the `engine.ECSScene[T]` interface
+Each scene implements `Setup` (where you get a fresh ECS `World` and the current state) and `Unload` (where you return the updated state to pass to the next scene).
+
+```go
+type MenuScene struct {
+    state GameState
+}
+
+func (s *MenuScene) Setup(w engine.World, state GameState, sm *engine.SceneManager[GameState]) {
+    s.state = state
+    w.AddSystems(&MenuSystem{sm: sm, state: &s.state})
+}
+
+func (s *MenuScene) Unload() GameState {
+    return s.state
+}
+```
+
+#### 3. Transition with effects
+You can transition immediately using `sm.SwitchTo(nextScene)` or with visual transitions (like **Fade** or **Slide**) using `sm.SwitchWithTransition(nextScene, transition)`:
+
+```go
+import "github.com/joelschutz/stagehand"
+
+// Inside a System:
+if spacePressed {
+    // Transition to Gameplay with a Fade effect (5% alpha per frame)
+    sys.sm.SwitchWithTransition(&GameplayScene{}, stagehand.NewFadeTransition[GameState](0.05))
+}
+```
+
+#### 4. Run the Scene Manager
+Instantiate the manager with the initial scene and state, then run it with Ebiten:
+
+```go
+func main() {
+    ebiten.SetWindowSize(640, 480)
+    sm := engine.NewSceneManager[GameState](&MenuScene{}, GameState{Score: 0})
+    if err := ebiten.RunGame(sm); err != nil {
+        log.Fatal(err)
+    }
+}
+```
 
 ---
 
@@ -278,10 +335,11 @@ filter := arkecs.NewFilter6[A, B, C, D, E, F](w.Ark())
 
 | File | Contents |
 |---|---|
-| `comp.go` | `Comp[T]`, `NewComp[T]()` |
+| `comp.go` | `Comp[T]`, `NewComp[T]()`, `RegisterComp[T]()` |
 | `filter.go` | `Filter1` … `Filter5` |
 | `lifecycle.go` | `OnAdder`, `OnRemover` |
 | `system.go` | `Updater`, `Drawer`, `Initer` |
 | `resource.go` | `SetResource[T]`, `GetResource[T]` |
 | `world.go` | `World` interface + implementation |
-| `game.go` | `Scene`, `Game`, `NewGame` |
+| `game.go` | `Scene`, `Game`, `NewGame` (single-scene) |
+| `scene.go` | `ECSScene[T]`, `SceneManager[T]` (multi-scene) |

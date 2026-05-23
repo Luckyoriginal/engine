@@ -8,8 +8,12 @@ github.com/hajimehoshi/ebiten/v2 v2.9.9 h1:JdDag6Ndj12iD4lxQGG8kbsrh7ssj4Sbzth6r
 github.com/hajimehoshi/ebiten/v2 v2.9.9/go.mod h1:DAt4tnkYYpCvu3x9i1X/nK/vOruNXIlYq/tBXxnhrXM=
 github.com/jezek/xgb v1.1.1 h1:bE/r8ZZtSv7l9gk6nU0mYx51aXrvnyb44892TwSaqS4=
 github.com/jezek/xgb v1.1.1/go.mod h1:nrhwO0FX/enq75I7Y7G8iN1ubpSGZEiA3v9e9GyRFlk=
+github.com/joelschutz/stagehand v1.1.1 h1:2POD93Mf5TcRuOh2mAQXVH2+2QHE4A3pfT9+hbZ5Eks=
+github.com/joelschutz/stagehand v1.1.1/go.mod h1:0xFVVeIsfW4PyajxhPc+dWZBlBE3xt6eDT89R/ihst8=
 github.com/mlange-42/ark v0.8.2 h1:dfAgkpcXikBhzGOwRdpVcBMhRPOqdwsjj51imi3SQbg=
 github.com/mlange-42/ark v0.8.2/go.mod h1:gkS9cuklENPTmSjL2z4DcJgJsIVqF1yNwFlx48Hz/Sw=
+github.com/solarlune/resolv v0.8.1 h1:QkjnTJYB59EJmw+0+f52UbfE149ERU4FTCRICJTYz9k=
+github.com/solarlune/resolv v0.8.1/go.mod h1:iqRbXy78XQ7aDXGZY3abI41Wr80Yv1DqnxzzPvGG6yE=
 golang.org/x/image v0.31.0 h1:mLChjE2MV6g1S7oqbXC0/UcKijjm5fnJLUYKIYrLESA=
 golang.org/x/image v0.31.0/go.mod h1:R9ec5Lcp96v9FTF+ajwaH3uGxPH4fKfHHAVbUILxghA=
 golang.org/x/sync v0.17.0 h1:l60nONMj9l5drqw6jlhIELNv9I0A4OFgRsG9k2oT9Ug=
