@@ -102,3 +102,21 @@ func (w *ecsSceneWrapper[T]) Load(state T, _ stagehand.SceneController[T]) {
 func (w *ecsSceneWrapper[T]) Unload() T {
 	return w.scene.Unload()
 }
+
+// BaseScene is a helper struct you can embed in your custom scenes to eliminate boilerplate.
+// It provides default implementations of Setup and Unload, and stores the state and scene manager.
+type BaseScene[T any] struct {
+	State T
+	SM    *SceneManager[T]
+}
+
+// Setup stores the state and scene manager. If you override this, call s.BaseScene.Setup(w, state, sm) first.
+func (s *BaseScene[T]) Setup(w World, state T, sm *SceneManager[T]) {
+	s.State = state
+	s.SM = sm
+}
+
+// Unload returns the stored state.
+func (s *BaseScene[T]) Unload() T {
+	return s.State
+}

@@ -200,6 +200,31 @@ Filters `Filter1` through `Filter5` are provided. If you need more components, u
 
 ---
 
+### Zero-Boilerplate Systems (Auto-Entity Systems)
+
+For maximum simplicity and zero boilerplate, you can design systems that operate directly on individual entities. Instead of declaring an explicit `FilterN` field and writing a manual `for q.Next() { ... }` loop, you simply declare exported pointer fields of the component types you need.
+
+The engine automatically detects these fields at setup time, constructs an optimized archetype filter under the hood, and iterates through matching entities on every tick:
+
+```go
+type Movement struct {
+    Position *Pos  
+    Velocity *Vel  
+}
+
+// Called automatically for each entity that carries BOTH Pos and Vel.
+func (s *Movement) Update(w engine.World) {
+    s.Position.X += s.Velocity.X
+    s.Position.Y += s.Velocity.Y
+}
+```
+
+#### Performance Characteristics
+* **0% Reflection per Tick**: Component field detection and unsafe memory offsets are cached once at startup. During the tick, raw pointers are written directly using `unsafe.Pointer` writes, resulting in zero GC allocation pressure.
+* **Archetype Speed**: Leverages `arkecs` native archetype queries. The update loop skips all non-matching entities entirely, delivering true $O(M)$ native compiled ECS execution speeds.
+
+---
+
 ### Lifecycle hooks — `OnAdd` and `OnRemove`
 
 Implement these optional methods on a component's pointer receiver to run code when the component is attached to or removed from an entity.

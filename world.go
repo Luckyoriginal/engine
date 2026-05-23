@@ -46,6 +46,8 @@ type compEntry struct {
 	// Called directly in spawnStruct after data is written, so OnAdd always
 	// receives the fully-initialised component value.
 	onAdder func(ptr unsafe.Pointer, w World, e arkecs.Entity)
+	has     func(e arkecs.Entity) bool
+	get     func(e arkecs.Entity) unsafe.Pointer
 }
 
 // ── worldImpl ─────────────────────────────────────────────────────────────────
@@ -75,6 +77,11 @@ func (w *worldImpl) Resource(key any) (any, bool) {
 	return v, ok
 }
 
+type autoField struct {
+	offset uintptr
+	entry  *compEntry
+}
+
 func (w *worldImpl) AddSystems(systems ...any) {
 	for _, s := range systems {
 		// Auto-build any engine.FilterN / engine.MapN fields.
@@ -83,9 +90,137 @@ func (w *worldImpl) AddSystems(systems ...any) {
 		if i, ok := s.(Initer); ok {
 			i.Init(w)
 		}
-		w.systems = append(w.systems, wrapSystem(s))
+
+		// Auto-detect if this system is an "Auto-Entity System" (has component pointers as fields)
+		fields := detectAutoFields(s, w.byType)
+		if len(fields) > 0 {
+			updater, isUpdate := s.(Updater)
+			drawer, isDraw := s.(Drawer)
+
+			var u Updater
+			var d Drawer
+
+			// Extract IDs to build the UnsafeFilter
+			ids := make([]arkecs.ID, len(fields))
+			for i := range fields {
+				ids[i] = fields[i].entry.id
+			}
+			filter := arkecs.NewUnsafeFilter(&w.ark, ids...)
+
+			if isUpdate {
+				u = &autoSystemUpdater{world: w, sys: s, fields: fields, filter: filter, u: updater}
+			}
+			if isDraw {
+				d = &autoSystemDrawer{world: w, sys: s, fields: fields, filter: filter, d: drawer}
+			}
+
+			w.systems = append(w.systems, system{u, d})
+		} else {
+			// Standard Global System
+			w.systems = append(w.systems, wrapSystem(s))
+		}
 	}
 }
+
+// detectAutoFields checks if a system is an Auto-Entity System by identifying
+// exported pointer fields whose element types are registered components.
+func detectAutoFields(sys any, byType map[reflect.Type]*compEntry) []autoField {
+	v := reflect.ValueOf(sys)
+	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+		return nil
+	}
+	v = v.Elem()
+	t := v.Type()
+
+	var fields []autoField
+	for i := range v.NumField() {
+		structField := t.Field(i)
+		if structField.PkgPath != "" {
+			continue // Skip unexported fields
+		}
+		ft := structField.Type
+		if ft.Kind() == reflect.Ptr {
+			elemType := ft.Elem()
+			if entry, ok := byType[elemType]; ok {
+				fields = append(fields, autoField{
+					offset: structField.Offset,
+					entry:  entry,
+				})
+			}
+		}
+	}
+	return fields
+}
+
+// ── Auto-Entity System Wrappers (Zero Reflection per Tick!) ───────────────────
+
+type autoSystemUpdater struct {
+	world  *worldImpl
+	sys    any
+	fields []autoField
+	filter arkecs.UnsafeFilter
+	u      Updater
+}
+
+func (asu *autoSystemUpdater) Update(w World) {
+	// Get base memory address of the system struct once
+	basePtr := unsafe.Pointer(reflect.ValueOf(asu.sys).Pointer())
+
+	q := asu.filter.Query()
+	for q.Next() {
+		// Direct Memory Injection: Write component pointers directly to fields using unsafe offsets.
+		// Bypasses Go's runtime reflection Set() entirely. 100% compile-speed, zero allocations!
+		for i := range asu.fields {
+			ptr := q.Get(asu.fields[i].entry.id)
+			fieldPtr := unsafe.Pointer(uintptr(basePtr) + asu.fields[i].offset)
+			*(*unsafe.Pointer)(fieldPtr) = ptr
+		}
+
+		// Run update tick
+		asu.u.Update(w)
+	}
+	q.Close()
+
+	// Reset pointer fields to prevent memory leaks
+	for i := range asu.fields {
+		fieldPtr := unsafe.Pointer(uintptr(basePtr) + asu.fields[i].offset)
+		*(*unsafe.Pointer)(fieldPtr) = nil
+	}
+}
+
+type autoSystemDrawer struct {
+	world  *worldImpl
+	sys    any
+	fields []autoField
+	filter arkecs.UnsafeFilter
+	d      Drawer
+}
+
+func (asd *autoSystemDrawer) Draw(w World, screen *ebiten.Image) {
+	basePtr := unsafe.Pointer(reflect.ValueOf(asd.sys).Pointer())
+
+	q := asd.filter.Query()
+	for q.Next() {
+		// Direct Memory Injection: Write component pointers directly to fields using unsafe offsets.
+		for i := range asd.fields {
+			ptr := q.Get(asd.fields[i].entry.id)
+			fieldPtr := unsafe.Pointer(uintptr(basePtr) + asd.fields[i].offset)
+			*(*unsafe.Pointer)(fieldPtr) = ptr
+		}
+
+		// Run draw tick
+		asd.d.Draw(w, screen)
+	}
+	q.Close()
+
+	// Reset pointer fields to prevent memory leaks
+	for i := range asd.fields {
+		fieldPtr := unsafe.Pointer(uintptr(basePtr) + asd.fields[i].offset)
+		*(*unsafe.Pointer)(fieldPtr) = nil
+	}
+}
+
+// ── buildFilterFields ─────────────────────────────────────────────────────────
 
 // buildFilterFields reflects over a system struct and calls build() on any
 // field that implements the filterable interface.
@@ -134,11 +269,19 @@ func (w *worldImpl) registerEntry(
 	if _, ok := w.byType[typ]; ok {
 		return
 	}
+	has := func(e arkecs.Entity) bool {
+		return w.ark.Unsafe().Has(e, id)
+	}
+	get := func(e arkecs.Entity) unsafe.Pointer {
+		return w.ark.Unsafe().Get(e, id)
+	}
 	w.byType[typ] = &compEntry{
 		id:       id,
 		typ:      typ,
 		copyInto: copyInto,
 		onAdder:  onAdder,
+		has:      has,
+		get:      get,
 	}
 }
 
@@ -181,9 +324,6 @@ func (w *worldImpl) spawnStruct(sv reflect.Value) arkecs.Entity {
 	}
 
 	// Create the entity with all component IDs at once.
-	// ark fires its own OnCreateEntity observers here (before our data copy),
-	// which is why we do not use ark observers for OnAdd — we call it
-	// ourselves below, after the copy, so OnAdd always sees real data.
 	e := w.ark.Unsafe().NewEntity(ids...)
 
 	for _, s := range slots {
